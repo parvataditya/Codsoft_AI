@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Rule-Based Chatbot</title>
+<style>
+  :root {
+    --bg: #1e1f26;
+    --panel: #262832;
+    --bubble-user: #4f7cff;
+    --bubble-bot: #33353f;
+    --text: #e8e9ee;
+    --muted: #9a9db0;
+    --accent: #4f7cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    padding: 24px;
+  }
+  .app {
+    width: 100%;
+    max-width: 640px;
+    background: var(--panel);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    display: flex;
+    flex-direction: column;
+    height: 88vh;
+  }
+  header {
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #4f7cff, #7a5cff);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  header .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #4dff8a;
+    box-shadow: 0 0 8px #4dff8a;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header p { margin: 0; font-size: 12px; color: rgba(255,255,255,0.8); }
+
+  #chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .msg {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: 14px;
+    line-height: 1.4;
+    font-size: 14px;
+    white-space: pre-wrap;
+    animation: pop 0.15s ease-out;
+  }
+  @keyframes pop { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .user {
+    align-self: flex-end;
+    background: var(--bubble-user);
+    color: white;
+    border-bottom-right-radius: 4px;
+  }
+  .bot {
+    align-self: flex-start;
+    background: var(--bubble-bot);
+    border-bottom-left-radius: 4px;
+  }
+  .rule-tag {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 4px;
+    display: block;
+  }
+  form {
+    display: flex;
+    gap: 8px;
+    padding: 14px;
+    background: #20212a;
+    border-top: 1px solid #33353f;
+  }
+  input {
+    flex: 1;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid #3a3c48;
+    background: #1a1b22;
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+  }
+  input:focus { border-color: var(--accent); }
+  button {
+    padding: 0 20px;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent);
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  button:hover { background: #3d68f0; }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 14px 12px;
+    background: #20212a;
+  }
+  .chip {
+    font-size: 12px;
+    color: var(--muted);
+    background: #2c2e38;
+    padding: 5px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    border: 1px solid #3a3c48;
+  }
+  .chip:hover { color: var(--text); border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div class="dot"></div>
+    <div>
+      <h1>RuleBot</h1>
+      <p>A simple pattern-matching chatbot</p>
+    </div>
+  </header>
+
+  <div id="chat"></div>
+
+  <div class="chips" id="chips"></div>
+
+  <form id="form">
+    <input id="input" type="text" placeholder="Type a message..." autocomplete="off" />
+    <button type="submit">Send</button>
+  </form>
+</div>
+
+<script>
+/* ============================================================
+   RULE-BASED CHATBOT ENGINE
+   Each rule = a regular expression pattern + a response
+   (or function that generates a response). Rules are checked
+   top-to-bottom; the first match wins. This mimics classic
+   "ELIZA-style" pattern matching used in early NLP chatbots.
+   ============================================================ */
+
+// simple memory so the bot can "remember" the user's name
+let userName = null;
+
+const rules = [
+  // --- Greetings ---
+  {
+    name: "greeting",
+    pattern: /\b(hi|hello|hey|yo|howdy)\b/i,
+    responses: [
+      "Hey there! How can I help you today?",
+      "Hello! What's on your mind?",
+      "Hi! Ask me something."
+    ]
+  },
+
+  // --- How are you ---
+  {
+    name: "wellbeing",
+    pattern: /\bhow (are|r) (you|u)\b/i,
+    responses: [
+      "I'm just a set of rules, but I'm running smoothly! How are you?",
+      "Doing great, thanks for asking! What about you?"
+    ]
+  },
+
+  // --- Name capture ---
+  {
+    name: "name_intro",
+    pattern: /\bmy name is (\w+)|\bi'?m (\w+)\b/i,
+    respond: (match) => {
+      userName = match[1] || match[2];
+      return `Nice to meet you, ${userName}! I'll remember that.`;
+    }
+  },
+
+  // --- Recall name ---
+  {
+    name: "recall_name",
+    pattern: /\bwhat('?s| is) my name\b/i,
+    respond: () => userName
+      ? `Your name is ${userName}, right?`
+      : "You haven't told me your name yet!"
+  },
+
+  // --- Bot identity ---
+  {
+    name: "bot_identity",
+    pattern: /\b(who are you|what are you)\b/i,
+    responses: [
+      "I'm RuleBot — a simple chatbot built with if-else / regex pattern matching, no fancy AI here!",
+    ]
+  },
+
+  // --- Thanks ---
+  {
+    name: "thanks",
+    pattern: /\b(thanks|thank you|thx)\b/i,
+    responses: ["You're welcome!", "Anytime!", "No problem at all."]
+  },
+
+  // --- Weather (fake canned response, since it's rule-based not connected to any API) ---
+  {
+    name: "weather",
+    pattern: /\bweather\b/i,
+    responses: [
+      "I can't check live weather since I'm rule-based, but I hope it's nice outside!"
+    ]
+  },
+
+  // --- Jokes ---
+  {
+    name: "joke",
+    pattern: /\bjoke\b/i,
+    responses: [
+      "Why don't programmers like nature? It has too many bugs.",
+      "I told my computer I needed a break, and it said no problem — it froze immediately.",
+      "Why do Java developers wear glasses? Because they don't see sharp."
+    ]
+  },
+
+  // --- Time-related ---
+  {
+    name: "time",
+    pattern: /\b(what time is it|current time)\b/i,
+    respond: () => `I don't have a live clock, but on your device it's roughly ${new Date().toLocaleTimeString()}.`
+  },
+
+  // --- Help ---
+  {
+    name: "help",
+    pattern: /\bhelp\b/i,
+    responses: [
+      "Try asking me things like: 'hello', 'tell me a joke', 'what's my name', 'bye'."
+    ]
+  },
+
+  // --- Farewell ---
+  {
+    name: "farewell",
+    pattern: /\b(bye|goodbye|see ya|exit|quit)\b/i,
+    responses: ["Goodbye! Have a great day!", "See you later!", "Bye! Come back anytime."]
+  },
+
+  // --- Yes/No small talk ---
+  {
+    name: "affirmative",
+    pattern: /^\s*(yes|yeah|yep|sure)\s*$/i,
+    responses: ["Great!", "Good to hear!"]
+  },
+  {
+    name: "negative",
+    pattern: /^\s*(no|nope|nah)\s*$/i,
+    responses: ["Alright, no worries.", "Okay, fair enough."]
+  },
+
+  // --- Fallback / default rule (always matches, placed last) ---
+  {
+    name: "fallback",
+    pattern: /.*/,
+    responses: [
+      "I'm not sure I understand. Could you rephrase that?",
+      "Hmm, I don't have a rule for that yet. Try 'help' to see what I can do.",
+      "Interesting — but that's outside my rule set!"
+    ]
+  }
+];
+
+// Pick a rule matching the input, and generate a response
+function getBotResponse(userText) {
+  for (const rule of rules) {
+    const match = userText.match(rule.pattern);
+    if (match) {
+      const reply = rule.respond
+        ? rule.respond(match)
+        : rule.responses[Math.floor(Math.random() * rule.responses.length)];
+      return { reply, ruleName: rule.name };
+    }
+  }
+  // Should never hit this because fallback matches everything
+  return { reply: "...", ruleName: "none" };
+}
+
+// --- UI wiring ---
+const chat = document.getElementById('chat');
+const form = document.getElementById('form');
+const input = document.getElementById('input');
+const chipsEl = document.getElementById('chips');
+
+function addMessage(text, sender, ruleName) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + sender;
+  div.textContent = text;
+  if (sender === 'bot' && ruleName) {
+    const tag = document.createElement('span');
+    tag.className = 'rule-tag';
+    tag.textContent = 'matched rule: ' + ruleName;
+    div.appendChild(tag);
+  }
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  addMessage(text, 'user');
+  input.value = '';
+  setTimeout(() => {
+    const { reply, ruleName } = getBotResponse(text);
+    addMessage(reply, 'bot', ruleName);
+  }, 300);
+});
+
+// Suggestion chips
+const suggestions = ["Hello!", "What's your name?", "Tell me a joke", "My name is Alex", "help", "bye"];
+suggestions.forEach(s => {
+  const chip = document.createElement('div');
+  chip.className = 'chip';
+  chip.textContent = s;
+  chip.onclick = () => { input.value = s; form.dispatchEvent(new Event('submit')); };
+  chipsEl.appendChild(chip);
+});
+
+// Welcome message
+addMessage("Hi! I'm RuleBot, a rule-based chatbot. Try the suggestions below or type your own message.", 'bot', 'greeting');
+</script>
+
+</body>
+</html>
